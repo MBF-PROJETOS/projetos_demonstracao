@@ -1,43 +1,57 @@
 /* ============================================================
-   ADMIN.JS — Autenticação e CRUD de projetos
+   ADMIN.JS — Autenticação (Supabase Auth) e CRUD de projetos
+   ------------------------------------------------------------
+   A segurança real é aplicada no SERVIDOR pelo RLS. Mesmo que
+   alguém burle a interface, o banco recusa escrita sem admin.
    ============================================================ */
 const Admin = {
   previewTimer: null,
+  _isLogged: false,
 
-  get isLogged() { return sessionStorage.getItem(CONFIG.authKey) === '1'; },
-  get password() { return localStorage.getItem(CONFIG.passKey) ?? CONFIG.defaultPass; },
+  get isLogged() { return this._isLogged; },
 
-  setPassword(newPass) {
-    if (!newPass || newPass.length < 4) return console.warn('Senha muito curta (mín. 4).');
-    localStorage.setItem(CONFIG.passKey, newPass);
-    console.log('✅ Senha atualizada.');
+  // Atualiza o estado/visual conforme a sessão do Supabase
+  async refreshSession() {
+    const { data } = await sb.auth.getSession();
+    this._isLogged = !!data.session;
+    document.body.classList.toggle('is-admin', this._isLogged);
+    const btn = $('navAdminBtn');
+    if (btn) btn.innerHTML = this._isLogged
+      ? '＋ <span class="txt">Novo projeto</span>'
+      : '🔐 <span class="txt">Admin</span>';
+    return this._isLogged;
   },
 
   handleNavClick() {
     this.isLogged
       ? this.openProjectModal()
-      : (UI.openModal('loginOverlay'), setTimeout(() => $('passInput').focus(), 250));
+      : (UI.openModal('loginOverlay'), setTimeout(() => $('emailInput')?.focus(), 250));
   },
 
-  login(e) {
+  async login(e) {
     e.preventDefault();
-    if ($('passInput').value === this.password) {
-      sessionStorage.setItem(CONFIG.authKey, '1');
-      document.body.classList.add('is-admin');
-      $('navAdminBtn').innerHTML = '＋ <span class="txt">Novo projeto</span>';
-      UI.closeModal('loginOverlay');
-      $('passInput').value = '';
-      UI.toast('👋 Bem-vindo, admin!');
-    } else {
-      UI.toast('❌ Senha incorreta');
+    const email = $('emailInput').value.trim();
+    const password = $('passInput').value;
+    const btn = e.submitter;
+    if (btn) { btn.disabled = true; btn.textContent = 'Entrando...'; }
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
+    if (error) {
+      UI.toast('❌ E-mail ou senha incorretos');
       $('passInput').select();
+      return;
     }
+    await this.refreshSession();
+    UI.closeModal('loginOverlay');
+    $('passInput').value = '';
+    UI.toast('👋 Bem-vindo, admin!');
+    await App.reload();
+    this.offerMigration();
   },
 
-  logout() {
-    sessionStorage.removeItem(CONFIG.authKey);
-    document.body.classList.remove('is-admin');
-    $('navAdminBtn').innerHTML = '🔐 <span class="txt">Admin</span>';
+  async logout() {
+    await sb.auth.signOut();
+    await this.refreshSession();
     UI.toast('Sessão encerrada');
   },
 
@@ -51,7 +65,6 @@ const Admin = {
     $('nameInput').value = p?.name ?? '';
     $('descInput').value = p?.desc ?? '';
     $('catInput').value  = p?.category ?? '';
-    // Sugestões de categoria no datalist
     $('catList').innerHTML = [...new Set([...UI.categories(), 'Ferramentas', 'Analytics', 'Sites', 'Sistemas'])]
       .map(c => `<option value="${escapeHtml(c)}">`).join('');
     $('preview').classList.remove('show');
@@ -75,7 +88,6 @@ const Admin = {
       img.onload  = () => { img.style.display = 'block'; loading.style.display = 'none'; };
       img.onerror = () => { loading.innerHTML = '<div>⚠️ Não consegui capturar — o card usará um visual padrão.</div>'; };
       img.src = CONFIG.screenshot(url);
-      // Sugere nome a partir do domínio
       if (!$('nameInput').value) {
         const base = domainOf(url).split('.')[0];
         $('nameInput').value = base.charAt(0).toUpperCase() + base.slice(1);
@@ -83,33 +95,60 @@ const Admin = {
     }, 500);
   },
 
-  saveProject(e) {
+  async saveProject(e) {
     e.preventDefault();
+    const btn = $('saveBtn');
     const data = {
       url:      $('urlInput').value.trim(),
       name:     $('nameInput').value.trim(),
       desc:     $('descInput').value.trim(),
       category: $('catInput').value.trim(),
     };
-    if (editingId) {
-      const i = projects.findIndex(x => x.id === editingId);
-      projects[i] = { ...projects[i], ...data };
-      UI.toast('✅ Projeto atualizado!');
-    } else {
-      projects.unshift({ id: uid(), createdAt: Date.now(), ...data });
-      UI.toast('🎉 Projeto adicionado!');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    try {
+      if (editingId) {
+        await Store.update(editingId, data);
+        UI.toast('✅ Projeto atualizado!');
+      } else {
+        await Store.insert(data);
+        UI.toast('🎉 Projeto adicionado!');
+      }
+      UI.closeModal('projectOverlay');
+      await App.reload();
+    } catch (err) {
+      console.error(err);
+      UI.toast('❌ Não foi possível salvar (sem permissão ou sem conexão).');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = editingId ? 'Salvar alterações' : 'Salvar projeto';
     }
-    Store.save(projects);
-    UI.closeModal('projectOverlay');
-    UI.render();
   },
 
-  deleteProject(id) {
+  async deleteProject(id) {
     const p = projects.find(x => x.id === id);
     if (!confirm(`Excluir "${p.name}"?`)) return;
-    projects = projects.filter(x => x.id !== id);
-    Store.save(projects);
-    UI.render();
-    UI.toast('🗑️ Projeto excluído');
+    try {
+      await Store.remove(id);
+      await App.reload();
+      UI.toast('🗑️ Projeto excluído');
+    } catch (err) {
+      console.error(err);
+      UI.toast('❌ Não foi possível excluir.');
+    }
+  },
+
+  /* Migração 1x: leva os projetos antigos do navegador para o banco */
+  async offerMigration() {
+    const legacy = Store.legacy();
+    if (!legacy.length) return;
+    if (!confirm(`Encontrei ${legacy.length} projeto(s) salvo(s) antigamente neste navegador.\nMigrar para o banco compartilhado agora?`)) return;
+    let ok = 0;
+    for (const p of legacy) {
+      try { await Store.insert({ name: p.name, url: p.url, desc: p.desc, category: p.category }); ok++; }
+      catch (err) { console.error('Falha ao migrar', p, err); }
+    }
+    localStorage.removeItem(CONFIG.legacyStorageKey);
+    UI.toast(`✅ ${ok} projeto(s) migrado(s)!`);
+    await App.reload();
   },
 };
