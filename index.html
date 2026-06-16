@@ -138,7 +138,8 @@ footer .admin-link:hover{color:var(--accent-hi)}
 <!-- Estilos v2: favicon, status, cliques, setor -->
 <style>
   .card-shot.icon-mode{display:grid;place-items:center;}
-  .shot-favicon{width:64px;height:64px;border-radius:14px;object-fit:contain;opacity:0;transition:opacity .3s;background:rgba(255,255,255,.06);padding:8px;box-shadow:0 4px 14px rgba(0,0,0,.18);}
+  .card-shot.icon-mode .shot-fallback{font-size:2.2rem;opacity:.16;}
+  .card-shot img.shot-favicon{width:72px;height:72px;border-radius:16px;object-fit:contain;opacity:0;transition:opacity .3s;background:rgba(255,255,255,.08);padding:12px;box-shadow:0 6px 18px rgba(0,0,0,.22);position:relative;z-index:2;}
   .shot-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .3s;}
   .status-dot{position:absolute;top:10px;left:10px;width:10px;height:10px;border-radius:50%;background:#9aa3ad;box-shadow:0 0 0 2px rgba(0,0,0,.25);z-index:3;}
   .status-dot.on{background:#22c55e;}
