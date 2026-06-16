@@ -17,6 +17,26 @@
 <!-- Estilos -->
 <link rel="stylesheet" href="css/global.css">
 <link rel="stylesheet" href="css/styles.css">
+
+<!-- PWA (instalação completa requer HTTPS) -->
+<link rel="manifest" href="manifest.json">
+
+<!-- Estilos v2: favicon, status, cliques, setor -->
+<style>
+  .card-shot.icon-mode{display:grid;place-items:center;}
+  .shot-favicon{width:64px;height:64px;border-radius:14px;object-fit:contain;opacity:0;transition:opacity .3s;background:rgba(255,255,255,.06);padding:8px;box-shadow:0 4px 14px rgba(0,0,0,.18);}
+  .shot-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .3s;}
+  .status-dot{position:absolute;top:10px;left:10px;width:10px;height:10px;border-radius:50%;background:#9aa3ad;box-shadow:0 0 0 2px rgba(0,0,0,.25);z-index:3;}
+  .status-dot.on{background:#22c55e;}
+  .status-dot.off{background:#9aa3ad;}
+  .clicks-badge{position:absolute;bottom:10px;right:10px;font-size:.72rem;font-weight:700;background:rgba(0,0,0,.55);color:#fff;padding:2px 8px;border-radius:999px;z-index:3;}
+  .pin-flag{position:absolute;top:8px;right:10px;font-size:.9rem;z-index:3;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4));}
+  .card.pinned{outline:2px solid var(--accent,#a78bfa);outline-offset:-2px;}
+  .card-owner{font-size:.78rem;color:var(--muted,#9aa3ad);margin:2px 0 4px;}
+  .sector-head{grid-column:1/-1;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.05rem;margin:18px 4px 2px;opacity:.85;}
+  .check-row{display:flex;align-items:center;gap:8px;font-size:.85rem;margin:4px 0 2px;cursor:pointer;color:var(--muted,#9aa3ad);}
+  .check-row input{width:auto;}
+</style>
 </head>
 <body>
 
@@ -71,6 +91,10 @@
 <div class="admin-bar">
   <span class="pulse"></span> Modo admin
   <button class="btn btn-yellow btn-sm" onclick="Admin.openProjectModal()">＋ Novo projeto</button>
+  <button class="btn btn-sm" onclick="Admin.exportJSON()" title="Baixar backup (JSON)">⬇️ Exportar</button>
+  <label class="btn btn-sm" title="Importar de um JSON" style="cursor:pointer">⬆️ Importar
+    <input type="file" accept="application/json" onchange="Admin.importJSON(this)" style="display:none">
+  </label>
   <button class="btn btn-sm" onclick="Admin.logout()">Sair</button>
 </div>
 
@@ -133,9 +157,22 @@
         <datalist id="catList"></datalist>
       </div>
       <div class="field">
+        <label for="sectorInput">Setor / equipe</label>
+        <input type="text" id="sectorInput" placeholder="Ex.: Comercial, TI, Financeiro..." maxlength="30">
+      </div>
+      <div class="field">
+        <label for="ownerInput">Responsável</label>
+        <input type="text" id="ownerInput" placeholder="Quem cuida desse sistema?" maxlength="40">
+      </div>
+      <div class="field">
         <label for="descInput">Definição / descrição</label>
         <textarea id="descInput" placeholder="Para que serve? Quando a equipe deve usar?" required maxlength="220"></textarea>
       </div>
+      <div class="field">
+        <label for="notesInput">Observações (aparece ao passar o mouse no card)</label>
+        <input type="text" id="notesInput" placeholder="Ex.: precisa de VPN, acesso só do RH..." maxlength="120">
+      </div>
+      <label class="check-row"><input type="checkbox" id="shotInput"> Usar print do site em vez do ícone</label>
       <div class="modal-actions">
         <button type="button" class="btn" onclick="UI.closeModal('projectOverlay')">Cancelar</button>
         <button type="submit" class="btn btn-pink" id="saveBtn">Salvar projeto</button>

@@ -61,10 +61,14 @@ const Admin = {
     const p = id ? projects.find(x => x.id === id) : null;
     $('projectModalTitle').textContent = p ? '✏️ Editar projeto' : '＋ Novo projeto';
     $('saveBtn').textContent = p ? 'Salvar alterações' : 'Salvar projeto';
-    $('urlInput').value  = p?.url  ?? '';
-    $('nameInput').value = p?.name ?? '';
-    $('descInput').value = p?.desc ?? '';
-    $('catInput').value  = p?.category ?? '';
+    $('urlInput').value    = p?.url  ?? '';
+    $('nameInput').value   = p?.name ?? '';
+    $('descInput').value   = p?.desc ?? '';
+    $('catInput').value    = p?.category ?? '';
+    $('sectorInput').value = p?.sector ?? '';
+    $('ownerInput').value  = p?.owner ?? '';
+    $('notesInput').value  = p?.notes ?? '';
+    $('shotInput').checked = !!p?.useScreenshot;
     $('catList').innerHTML = [...new Set([...UI.categories(), 'Ferramentas', 'Analytics', 'Sites', 'Sistemas'])]
       .map(c => `<option value="${escapeHtml(c)}">`).join('');
     $('preview').classList.remove('show');
@@ -103,6 +107,10 @@ const Admin = {
       name:     $('nameInput').value.trim(),
       desc:     $('descInput').value.trim(),
       category: $('catInput').value.trim(),
+      sector:   $('sectorInput').value.trim(),
+      owner:    $('ownerInput').value.trim(),
+      notes:    $('notesInput').value.trim(),
+      useScreenshot: $('shotInput').checked,
     };
     btn.disabled = true; btn.textContent = 'Salvando...';
     try {
@@ -150,5 +158,62 @@ const Admin = {
     localStorage.removeItem(CONFIG.legacyStorageKey);
     UI.toast(`✅ ${ok} projeto(s) migrado(s)!`);
     await App.reload();
+  },
+
+  /* Fixar / desafixar no topo */
+  async togglePin(id) {
+    if (!this.isLogged) return this.handleNavClick();
+    const p = projects.find(x => x.id === id);
+    if (!p) return;
+    try {
+      await Store.setPinned(id, !p.pinned);
+      await App.reload();
+      UI.toast(p.pinned ? 'Desafixado' : '📌 Fixado no topo');
+    } catch (err) {
+      console.error(err);
+      UI.toast('❌ Não foi possível fixar.');
+    }
+  },
+
+  /* Backup: baixa todos os projetos em JSON */
+  exportJSON() {
+    const data = JSON.stringify(projects, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `hub-mbfinance-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    UI.toast('💾 Backup exportado');
+  },
+
+  /* Importa projetos de um arquivo JSON (somente admin) */
+  importJSON(input) {
+    if (!this.isLogged) return this.handleNavClick();
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      let arr;
+      try { arr = JSON.parse(reader.result); }
+      catch { return UI.toast('❌ Arquivo inválido'); }
+      if (!Array.isArray(arr)) return UI.toast('❌ Formato inesperado');
+      if (!confirm(`Importar ${arr.length} projeto(s)?`)) return;
+      let ok = 0;
+      for (const p of arr) {
+        try {
+          await Store.insert({
+            name: p.name, url: p.url, desc: p.desc ?? p.description ?? '',
+            category: p.category, sector: p.sector, owner: p.owner,
+            notes: p.notes, useScreenshot: p.useScreenshot,
+          });
+          ok++;
+        } catch (err) { console.error('Falha ao importar', p, err); }
+      }
+      input.value = '';
+      UI.toast(`✅ ${ok} projeto(s) importado(s)`);
+      await App.reload();
+    };
+    reader.readAsText(file);
   },
 };

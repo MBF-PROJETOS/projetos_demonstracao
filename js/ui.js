@@ -15,7 +15,7 @@ const UI = {
   openModal(id)  { $(id).classList.add('open'); },
   closeModal(id) { $(id).classList.remove('open'); },
 
-  /* ---------- Saudação + relógio ---------- */
+  /* ---------- Saudação ---------- */
   greet() {
     const h = new Date().getHours();
     const saud = h < 5 ? 'Boa madrugada' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
@@ -31,15 +31,15 @@ const UI = {
     }
   },
 
-  /* ---------- Filtros de categoria ---------- */
+  /* ---------- Categorias / setores ---------- */
   categories() {
     return [...new Set(projects.map(p => p.category).filter(Boolean))].sort();
   },
-
-  setFilter(cat) {
-    activeCategory = cat;
-    this.render();
+  sectorsCount() {
+    return new Set(projects.map(p => p.sector).filter(Boolean)).size;
   },
+
+  setFilter(cat) { activeCategory = cat; this.render(); },
 
   chipsHTML() {
     const chip = (val, label) =>
@@ -47,6 +47,7 @@ const UI = {
     return [
       chip('all', 'Todos'),
       chip('favs', '⭐ Favoritos'),
+      chip('mais-usados', '🔥 Mais usados'),
       ...this.categories().map(c => chip(c, escapeHtml(c))),
     ].join('');
   },
@@ -56,16 +57,27 @@ const UI = {
     const safeName = escapeHtml(p.name), safeDesc = escapeHtml(p.desc);
     const initial = safeName.charAt(0).toUpperCase() || '★';
     const isFav = Favs.has(p.id);
+    const icon = p.useScreenshot
+      ? `<img class="shot-img" loading="lazy" src="${CONFIG.screenshot(p.url)}" alt=""
+             onload="this.style.opacity=1;UI.setOnline('${p.id}',true)" onerror="this.remove()">`
+      : `<img class="shot-favicon" loading="lazy" src="${CONFIG.favicon(p.url)}" alt=""
+             onload="this.style.opacity=1;UI.setOnline('${p.id}',true)" onerror="this.remove();UI.setOnline('${p.id}',false)">`;
+    const clicksBadge = p.clicks > 0 ? `<span class="clicks-badge" title="${p.clicks} acesso(s)">🔥 ${p.clicks}</span>` : '';
+    const ownerLine = p.owner ? `<div class="card-owner">👤 ${escapeHtml(p.owner)}</div>` : '';
+    const titleAttr = p.notes ? escapeHtml(p.notes) : `Visitar ${safeName}`;
     return `
-    <article class="card" style="transition-delay:${Math.min(i * 60, 360)}ms" onclick="UI.visit('${p.id}')" title="Visitar ${safeName}">
-      <div class="card-shot">
+    <article class="card ${p.pinned ? 'pinned' : ''}" style="transition-delay:${Math.min(i * 60, 360)}ms" onclick="UI.visit('${p.id}')" title="${titleAttr}">
+      <div class="card-shot ${p.useScreenshot ? '' : 'icon-mode'}">
         <div class="shot-fallback">${initial}</div>
-        <img loading="lazy" src="${CONFIG.screenshot(p.url)}" alt="Screenshot de ${safeName}"
-             onload="this.style.position='relative'" onerror="this.remove()">
+        ${icon}
+        <span class="status-dot" id="dot_${p.id}" title="Disponibilidade (melhor esforço)"></span>
+        ${p.pinned ? '<span class="pin-flag" title="Fixado">📌</span>' : ''}
+        ${clicksBadge}
         <span class="card-visit">Visitar ↗</span>
         <button class="fav-btn ${isFav ? 'active' : ''}" title="${isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}"
                 onclick="event.stopPropagation();UI.toggleFav('${p.id}')">${isFav ? '⭐' : '☆'}</button>
         <div class="card-admin" onclick="event.stopPropagation()">
+          <button class="icon-btn" title="${p.pinned ? 'Desafixar' : 'Fixar no topo'}" onclick="Admin.togglePin('${p.id}')">📌</button>
           <button class="icon-btn" title="Editar" onclick="Admin.openProjectModal('${p.id}')">✏️</button>
           <button class="icon-btn del" title="Excluir" onclick="Admin.deleteProject('${p.id}')">🗑️</button>
         </div>
@@ -73,9 +85,15 @@ const UI = {
       <div class="card-body">
         <div class="card-domain">${escapeHtml(p.category || domainOf(p.url))}</div>
         <h3 class="card-title">${safeName}</h3>
+        ${ownerLine}
         <p class="card-desc">${safeDesc}</p>
       </div>
     </article>`;
+  },
+
+  setOnline(id, ok) {
+    const d = $('dot_' + id);
+    if (d) d.classList.add(ok ? 'on' : 'off');
   },
 
   toggleFav(id) {
@@ -88,17 +106,37 @@ const UI = {
   render() {
     const q = $('searchInput').value.trim().toLowerCase();
     let list = projects.filter(p =>
-      !q || p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)
-        || p.url.toLowerCase().includes(q) || (p.category ?? '').toLowerCase().includes(q)
+      !q || [p.name, p.desc, p.url, p.category, p.sector, p.owner]
+        .some(v => (v ?? '').toLowerCase().includes(q))
     );
     if (activeCategory === 'favs') list = list.filter(p => Favs.has(p.id));
-    else if (activeCategory !== 'all') list = list.filter(p => p.category === activeCategory);
+    else if (activeCategory !== 'all' && activeCategory !== 'mais-usados') list = list.filter(p => p.category === activeCategory);
 
-    // Favoritos primeiro, depois mais recentes
-    list.sort((a, b) => (Favs.has(b.id) - Favs.has(a.id)) || (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    const byUsage = activeCategory === 'mais-usados';
+    list.sort((a, b) => {
+      if (byUsage && b.clicks !== a.clicks) return b.clicks - a.clicks;
+      if (b.pinned !== a.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+      const fa = Favs.has(a.id) ? 1 : 0, fb = Favs.has(b.id) ? 1 : 0;
+      if (fa !== fb) return fb - fa;
+      return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    });
 
     $('chips').innerHTML = this.chipsHTML();
-    $('grid').innerHTML = list.map((p, i) => this.cardHTML(p, i)).join('');
+
+    const grouped = activeCategory === 'all' && !q && this.sectorsCount() > 1;
+    let html;
+    if (grouped) {
+      const groups = {};
+      list.forEach(p => { const s = p.sector || 'Geral'; (groups[s] ||= []).push(p); });
+      html = Object.keys(groups)
+        .sort((a, b) => a === 'Geral' ? 1 : b === 'Geral' ? -1 : a.localeCompare(b))
+        .map(s => `<div class="sector-head">${escapeHtml(s)}</div>` + groups[s].map((p, i) => this.cardHTML(p, i)).join(''))
+        .join('');
+    } else {
+      html = list.map((p, i) => this.cardHTML(p, i)).join('');
+    }
+
+    $('grid').innerHTML = html;
     $('countPill').textContent = list.length;
     $('emptyState').style.display = (projects.length === 0) ? 'block' : 'none';
     requestAnimationFrame(() =>
@@ -108,7 +146,6 @@ const UI = {
     );
   },
 
-  /* Abre o primeiro resultado visível (Enter na busca) */
   openFirst() {
     const first = document.querySelector('.card');
     if (first) first.click();
@@ -116,6 +153,9 @@ const UI = {
 
   visit(id) {
     const p = projects.find(x => x.id === id);
-    if (p) window.open(p.url, '_blank', 'noopener');
+    if (!p) return;
+    Store.bumpClick(id);            // conta o acesso no banco (compartilhado)
+    p.clicks = (p.clicks ?? 0) + 1; // reflete na hora nesta tela
+    window.open(p.url, '_blank', 'noopener');
   },
 };

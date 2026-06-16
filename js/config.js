@@ -14,8 +14,14 @@ const CONFIG = {
   // Chave do localStorage usada na migração 1x dos dados antigos
   legacyStorageKey: 'mb_projects_v1',
 
-  // Serviço de screenshot dos cards
+  // Serviço de screenshot dos cards (usado só quando o card pede "usar print")
   screenshot: url => `https://image.thum.io/get/width/800/crop/700/noanimate/${url}`,
+
+  // Favicon do site (rápido) — ícone padrão dos cards
+  favicon: url => {
+    try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=128`; }
+    catch { return ''; }
+  },
 };
 
 // Cliente Supabase (a lib é carregada via CDN no index.html, ANTES deste arquivo)
