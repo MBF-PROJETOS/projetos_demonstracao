@@ -1,0 +1,27 @@
+name: worm-guard
+on: [push, pull_request]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detectar assinatura do worm (supply-chain postcss)
+        shell: bash
+        run: |
+          bad=0
+          for f in $(git ls-files '*.config.js' '*.config.mjs' '*.config.cjs' '*.config.ts'); do
+            maxlen=$(awk '{ if (length>m) m=length } END { print m+0 }' "$f")
+            if [ "${maxlen:-0}" -gt 800 ]; then
+              echo "::error file=$f::linha de $maxlen chars — assinatura do worm"
+              bad=1
+            fi
+          done
+          if git grep -nI -E "global\.require[[:space:]]*=[[:space:]]*require|global\.o[[:space:]]*=[[:space:]]*.8-" -- '*.js' '*.mjs' '*.cjs' '*.ts' ; then
+            echo "::error::marcador de payload do worm encontrado"
+            bad=1
+          fi
+          if [ "$bad" -ne 0 ]; then
+            echo "WORM-GUARD: BLOQUEADO — payload detectado."
+            exit 1
+          fi
+          echo "WORM-GUARD: limpo."
